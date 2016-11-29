@@ -1,4 +1,3 @@
-
 /*
  * Copyright (C) 2016 Jorge Pereira <jpereiran@gmail.com>
  */
@@ -28,11 +27,13 @@
 
 #define NGX_BACKTRACE_DEFAULT_STACK_MAX_SIZE 30
 
-static char *ngx_backtrace_files(ngx_conf_t *cf, ngx_command_t *cmd,
-    void *conf);
+static char *ngx_backtrace_files(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static void ngx_error_signal_handler(int signo, siginfo_t *info, void *secret);
 static ngx_int_t ngx_backtrace_init_worker(ngx_cycle_t *cycle);
 static void *ngx_backtrace_create_conf(ngx_cycle_t *cycle);
+#if defined(nginx_version) && nginx_version >= 1005002
+static ngx_log_t *ngx_log_create(ngx_cycle_t *cycle, ngx_str_t *name);
+#endif
 
 typedef struct {
     int     signo;
@@ -45,10 +46,6 @@ typedef struct {
     ngx_log_t  *log;
     ngx_int_t  max_stack_size;
 } ngx_backtrace_conf_t;
-
-#if defined(nginx_version) && nginx_version >= 1005002
-static ngx_log_t *ngx_log_create(ngx_cycle_t *cycle, ngx_str_t *name);
-#endif
 
 static ngx_signal_t  ngx_backtrace_signals[] = {
     { SIGABRT, "SIGABRT", "", ngx_error_signal_handler },
@@ -68,7 +65,7 @@ typedef struct {
     const char *si_code_desc;
 } sig_action_map_t;
 
-static sig_action_map_t  ngx_backtrace_si_codes[] = {
+static sig_action_map_t ngx_backtrace_si_codes[] = {
     { SIGSEGV, SEGV_MAPERR, "SEGV_MAPERR (Address not mapped to object)" },
     { SIGSEGV, SEGV_ACCERR, "SEGV_ACCERR (Invalid permissions for mapped object)" },
     { SIGSEGV, -1,          "Unknown reason" }
@@ -106,7 +103,6 @@ static ngx_command_t ngx_backtrace_commands[] = {
       ngx_null_command
 };
 
-
 static ngx_core_module_t  ngx_backtrace_module_ctx = {
     ngx_string("backtrace"),
     ngx_backtrace_create_conf,
@@ -130,7 +126,7 @@ ngx_module_t  ngx_backtrace_module = {
 
 #if defined(nginx_version) && nginx_version >= 1005002
 static ngx_log_t *
-ngx_log_create(ngx_cycle_t *cycle, ngx_str_t *name)
+ngx_log_create (ngx_cycle_t *cycle, ngx_str_t *name)
 {
     ngx_log_t  *log;
 
@@ -163,7 +159,7 @@ const char *ngx_backtrace_get_proc_exe (pid_t pid) {
 }
 
 static ngx_int_t
-ngx_init_error_signals(ngx_log_t *log)
+ngx_init_error_signals (ngx_log_t *log)
 {
     ngx_signal_t      *sig;
     struct sigaction   sa;
@@ -185,13 +181,14 @@ ngx_init_error_signals(ngx_log_t *log)
 }
 
 static void
-ngx_error_signal_handler(int signo, siginfo_t *info, void *ptr) {
+ngx_error_signal_handler (int signo, siginfo_t *info, void *ptr) {
     void                 *buffer;
     ngx_log_t            *log;
     ngx_signal_t         *sig;
     struct sigaction      sa;
     ngx_backtrace_conf_t *bcf;
     int                   nptrs;
+    int                   ret;
     time_t                crash_time;
     const char           *si_code_reason;
     const char           *proc_exe;
@@ -210,14 +207,15 @@ ngx_error_signal_handler(int signo, siginfo_t *info, void *ptr) {
     }
     
     if (sig == 0) {
-        ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0, "ngx_backtrace_module: Wrong signal received from Kernel! Weird!!");
+        ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0, 
+            "ngx_backtrace_module: Wrong signal received from Kernel! Weird!!");
         return;
     }
 
-    si_code_reason = ngx_si_code2desc(signo, info->si_code);
-
-    ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0, "ngx_backtrace_module: Got signal %d (%s), Saving the stacktrace in %s", 
-                signo, sig->signame, (char *)log->file->name.data);
+    ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0, 
+                    "ngx_backtrace_module: Got signal %d (%s), Saving the stacktrace in %s", 
+                    signo, sig->signame, (char *)log->file->name.data
+    );
 
     dprintf(log->file->fd, "+-------------------------------------------------------+\n");
     dprintf(log->file->fd, "| ngx_backtrace_module: Received signal %d (%s)\n", signo, sig->signame);
@@ -232,6 +230,8 @@ ngx_error_signal_handler(int signo, siginfo_t *info, void *ptr) {
     proc_exe = ngx_backtrace_get_proc_exe(getpid());
     dprintf(log->file->fd, " Binary name: %s\n", proc_exe);
     dprintf(log->file->fd, " Signal Code: %d\n", info->si_code);
+
+    si_code_reason = ngx_si_code2desc(signo, info->si_code);
     dprintf(log->file->fd, " Signal Reason: %s\n", si_code_reason);
     dprintf(log->file->fd, "+-------------------------------------------------------+\n");
 
@@ -255,14 +255,18 @@ ngx_error_signal_handler(int signo, siginfo_t *info, void *ptr) {
     dprintf(log->file->fd, "Stack trace:\n");
 
     unw_getcontext (&uc);
-    unw_init_local (&cursor, &uc);
+    ret = unw_init_local (&cursor, &uc);
+    if (ret != 0) {
+        dprintf(log->file->fd, "Problems with unw_init_local() failed: ret=%d\n", ret);
+        goto invalid;
+    }
 
     for (nptrs = 0; unw_step(&cursor) > 0; nptrs++) {
-        char fname[256] = { '\0', };
+        char fname[128] = { '\0', };
         unw_word_t ip, sp, offp;
-        int ret;
 
-        unw_get_proc_name (&cursor, fname, 256, &offp);
+        unw_get_proc_name (&cursor, fname, sizeof(fname), &offp);
+
         ret = unw_get_reg (&cursor, UNW_REG_IP, &ip);
         if (ret != 0) {
             dprintf(log->file->fd, "Problems with unw_get_reg(UNW_REG_IP) failed: ret=%d\n", ret);
@@ -291,8 +295,7 @@ invalid:
 }
 
 static char *
-ngx_backtrace_files(ngx_conf_t *cf, ngx_command_t *cmd,
-    void *conf)
+ngx_backtrace_files(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
     ngx_str_t             file, *value;
     ngx_log_t            *log;

@@ -24,5 +24,5 @@ fi
 ngx_addon_name=ngx_backtrace_module
 HTTP_MODULES="$HTTP_MODULES ngx_backtrace_module"
 NGX_ADDON_SRCS="$NGX_ADDON_SRCS $ngx_addon_dir/ngx_backtrace_module.c"
-CORE_LIBS="$CORE_LIBS -lunwind -lunwind-$lib_arch"
-CFLAGS="$CFLAGS -fno-omit-frame-pointer -DNGINX_MODULE_BACKTRACE"
+CORE_LIBS="$CORE_LIBS -rdynamic -fno-omit-frame-pointer -lunwind -lunwind-$lib_arch"
+CFLAGS="$CFLAGS -rdynamic -fno-omit-frame-pointer"
