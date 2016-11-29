@@ -332,6 +332,15 @@ ngx_backtrace_files(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 static ngx_int_t
 ngx_backtrace_init_worker(ngx_cycle_t *cycle)
 {
+    ngx_backtrace_conf_t *bcf;
+
+    bcf = (ngx_backtrace_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_backtrace_module);
+
+    if (!bcf->log) {
+        ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "ngx_backtrace_module: The module is not in use");
+        return NGX_OK;
+    }
+
     if (ngx_init_error_signals(cycle->log) == NGX_ERROR) {
         return NGX_ERROR;
     }
