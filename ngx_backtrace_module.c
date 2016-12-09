@@ -257,7 +257,13 @@ ngx_error_signal_handler (int signo, siginfo_t *info, void *ptr) {
 
     dprintf(fd, "Stack trace:\n");
 
-    unw_getcontext (&uc);
+    ret = unw_getcontext(&uc);
+    if (ret != UNW_ESUCCESS) {
+        ngx_log_error(NGX_LOG_ERR, log, ngx_errno,
+                      "ngx_backtrace_module: Problems with unw_getcontext() ret=%d", ret);
+        goto invalid;
+    }
+
     ret = unw_init_local (&cursor, &uc);
     if (ret != 0) {
         dprintf(fd, "Problems with unw_init_local() failed: ret=%d\n", ret);
