@@ -171,7 +171,7 @@ ngx_init_error_signals (ngx_log_t *log)
 
         if (sigaction(sig->signo, &sa, NULL) == -1) {
             ngx_log_error(NGX_LOG_EMERG, log, ngx_errno,
-                          "sigaction(%s) failed", sig->signame);
+                          "ngx_backtrace_module: sigaction(%s) failed", sig->signame);
             return NGX_ERROR;
         }
     }
@@ -248,7 +248,7 @@ ngx_error_signal_handler (int signo, siginfo_t *info, void *ptr) {
     sigemptyset(&sa.sa_mask);
     if (sigaction(signo, &sa, NULL) == -1) {
         ngx_log_error(NGX_LOG_ERR, log, ngx_errno,
-                      "sigaction(%s) failed", sig->signame);
+                      "ngx_backtrace_module: sigaction(%s) failed", sig->signame);
     }
 
     if (bcf->max_stack_size == NGX_CONF_UNSET) {
