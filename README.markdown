@@ -80,4 +80,3 @@ End of stack trace.
 
 ```
 
-p.s: It was based on https://github.com/alibaba/nginx-backtrace/
