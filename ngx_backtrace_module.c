@@ -297,6 +297,8 @@ ngx_error_signal_handler (int signo, siginfo_t *info, void *ptr) {
 
     dprintf(fd, "End of stack trace.\n\n");
 
+    fsync(fd);
+
 bye:
 
     _exit(1);
