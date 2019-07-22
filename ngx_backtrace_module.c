@@ -301,7 +301,7 @@ ngx_error_signal_handler (int signo, siginfo_t *info, void *ptr) {
 
 bye:
 
-    _exit(1);
+    return;
 invalid:
 
     kill(ngx_getpid(), signo);
