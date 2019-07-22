@@ -6,7 +6,7 @@ Name
 Description
 ===========
 
-* It can be used to dump backtrace of nginx in case a worker process exits abnormally, e.g. when some signal is received (SIGABR, SIGBUS, SIGFPE, SIGILL, SIGIOT, SIGSEGV). It's quite handy for debugging purpose.
+* It can be used to dump backtrace of nginx in case an Nginx process (master or worker) exits abnormally, e.g. when some signal is received (SIGABR, SIGBUS, SIGFPE, SIGILL, SIGIOT, SIGSEGV). It's quite handy for debugging purpose.
 * This module requires the libunwind API. You can't enable it on systems lack of this library, Check if your system is supported in http://www.nongnu.org/libunwind/index.html
 
 Installing Dependencies (Debian/Ubuntu)

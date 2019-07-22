@@ -29,7 +29,7 @@
 
 static char *ngx_backtrace_files(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static void ngx_error_signal_handler(int signo, siginfo_t *info, void *secret);
-static ngx_int_t ngx_backtrace_init_worker(ngx_cycle_t *cycle);
+static ngx_int_t ngx_backtrace_init_module(ngx_cycle_t *cycle);
 static void *ngx_backtrace_create_conf(ngx_cycle_t *cycle);
 #if defined(nginx_version) && nginx_version >= 1005002
 static ngx_log_t *ngx_log_create(ngx_cycle_t *cycle, ngx_str_t *name);
@@ -114,8 +114,8 @@ ngx_module_t  ngx_backtrace_module = {
     ngx_backtrace_commands,                /* module directives */
     NGX_CORE_MODULE,                       /* module type */
     NULL,                                  /* init master */
-    NULL,                                  /* init module */
-    ngx_backtrace_init_worker,             /* init process */
+    ngx_backtrace_init_module,             /* init module */
+    NULL,                                  /* init process */
     NULL,                                  /* init thread */
     NULL,                                  /* exit thread */
     NULL,                                  /* exit process */
@@ -338,7 +338,7 @@ ngx_backtrace_files(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 }
 
 static ngx_int_t
-ngx_backtrace_init_worker(ngx_cycle_t *cycle)
+ngx_backtrace_init_module(ngx_cycle_t *cycle)
 {
     ngx_backtrace_conf_t *bcf;
 
