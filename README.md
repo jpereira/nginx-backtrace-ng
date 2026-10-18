@@ -8,11 +8,19 @@
 [![Language: C](https://img.shields.io/badge/language-C-555555.svg)](ngx_backtrace_module.c)
 [![Last commit](https://img.shields.io/github/last-commit/jpereira/nginx-backtrace-ng)](https://github.com/jpereira/nginx-backtrace-ng/commits/master)
 
-nginx module that dumps a stack trace (via libunwind) when an nginx process, master or
-worker, receives a fatal signal: `SIGABRT`, `SIGBUS`, `SIGFPE`, `SIGILL`, `SIGIOT` or
-`SIGSEGV`. Handy for debugging crashes without core files.
+nginx module that saves a stack trace when an nginx process (master or worker) gets a fatal
+signal: `SIGABRT`, `SIGBUS`, `SIGFPE`, `SIGILL`, `SIGIOT` or `SIGSEGV`.
 
-Tested on Ubuntu 24.04 and Debian 12 with nginx 1.31.7 and 1.26.2 (see [Tests](#tests)).
+If you are writing your own nginx modules, you need this. A bug in your handler or filter
+just kills the worker and you have no clue why. With this module you get the stack trace
+right in a log file, with function names and the faulting address. No core dump, no gdb, no
+need to reproduce it under a debugger first.
+
+It uses [libunwind](http://www.nongnu.org/libunwind/) to walk the stack and get the function
+names, so you need it to build (`libunwind-dev` on Debian/Ubuntu).
+
+Tested on Ubuntu 24.04 and Debian 12 (x86_64 and aarch64), with nginx 1.31.7 and 1.26.2.
+See [Tests](#tests).
 
 ## Quick start
 
@@ -36,8 +44,8 @@ Then, in `nginx.conf` (main context):
 backtrace_log /var/log/nginx/backtrace.log;
 ```
 
-The module requires [libunwind](http://www.nongnu.org/libunwind/) and is only active when
-`backtrace_log` is set. Without it, nginx logs "The module is not in use".
+The module only works if `backtrace_log` is set. Without it, nginx just logs "The module is
+not in use".
 
 ## Directives
 
@@ -47,7 +55,7 @@ The module requires [libunwind](http://www.nongnu.org/libunwind/) and is only ac
 **Default**: none (module disabled)
 **Context**: main
 
-File where the stack trace is written.
+File where the stack trace goes.
 
 ### backtrace_max_stack_size
 
@@ -55,44 +63,52 @@ File where the stack trace is written.
 **Default**: `30`
 **Context**: main
 
-Maximum stack depth of the backtrace.
+How many frames to save, at most.
 
 ## Sample
 
+Real output, from a NULL write in a handler (`/crash?mode=null`, see [Tests](#tests)):
+
 ```
-# tail -1 logs/error.log
-2016/11/29 02:47:53 [error] 21810#0: ngx_backtrace_module: Got signal 11 (SIGSEGV), Saving the stacktrace in /tmp/nginx-crash.log
 # cat /tmp/nginx-crash.log
+2026/10/18 20:02:34 [error] 12#0: ngx_backtrace_module: Got signal 11 (SIGSEGV), Saving the stacktrace in /tmp/nginx-crash.log
 +-------------------------------------------------------+
 | ngx_backtrace_module: Received signal 11 (SIGSEGV)
 +-------------------------------------------------------+
- Date: Tue Nov 29 02:47:53 2016
- Faulty address: 0xd3adbeef
- PID: 21810
- PPID: 21809
+ Date: Sun Oct 18 20:02:34 2026
+ Faulty address: (nil)
+ PID: 12
+ PPID: 10
  Binary name: /opt/nginx/sbin/nginx
  Signal Code: 1
  Signal Reason: SEGV_MAPERR (Address not mapped to object)
 +-------------------------------------------------------+
 Stack trace:
-	#01: 0x00000000d3adbeef in ??(), sp = 0x00007ffe433b3cb8
-	#02: 0x0000557e25d696cb in ngx_http_process_request(), sp = 0x00007ffe433b3cc8
-	#03: 0x0000557e25d535e5 in ngx_os_specific_status(), sp = 0x00007ffe433b3d40
-	#04: 0x0000557e25d4b3b8 in ngx_process_events_and_timers(), sp = 0x00007ffe433b3da0
-	#05: 0x0000557e25d513ef in ngx_libc_crypt(), sp = 0x00007ffe433b3de0
-	#06: 0x0000557e25d4fd11 in ngx_spawn_process(), sp = 0x00007ffe433b3e00
-	#07: 0x0000557e25d515d0 in ngx_libc_crypt(), sp = 0x00007ffe433b3e80
-	#08: 0x0000557e25d52132 in ngx_master_process_cycle(), sp = 0x00007ffe433b3f00
-	#09: 0x0000557e25d2ff8a in main(), sp = 0x00007ffe433b4070
+	#00: 0x00005561eddb7aac in ngx_http_crash_test_handler(), sp = 0x00007ffda6dd0210
+	#01: 0x00005561edd26664 in ngx_http_core_content_phase(), sp = 0x00007ffda6dd0230
+	#02: 0x00005561edd2590b in ngx_http_core_run_phases(), sp = 0x00007ffda6dd0280
+	#03: 0x00005561edd25874 in ngx_http_handler(), sp = 0x00007ffda6dd02c0
+	#04: 0x00005561edd34fca in ngx_http_process_request(), sp = 0x00007ffda6dd02f0
+	#05: 0x00005561edd339b9 in ngx_http_process_request_headers(), sp = 0x00007ffda6dd0320
+	#06: 0x00005561edd32e81 in ngx_http_process_request_line(), sp = 0x00007ffda6dd03a0
+	#07: 0x00005561edd325a9 in ngx_http_wait_request_handler(), sp = 0x00007ffda6dd0410
+	#08: 0x00005561edd1eaca in ngx_epoll_process_events(), sp = 0x00007ffda6dd0470
+	#09: 0x00005561edd0e01f in ngx_process_events_and_timers(), sp = 0x00007ffda6dd04f0
+	#10: 0x00005561edd1c334 in ngx_worker_process_cycle(), sp = 0x00007ffda6dd0530
+	#11: 0x00005561edd18f41 in ngx_spawn_process(), sp = 0x00007ffda6dd0560
+	#12: 0x00005561edd1b4d9 in ngx_start_worker_processes(), sp = 0x00007ffda6dd05c0
+	#13: 0x00005561edd1acaa in ngx_master_process_cycle(), sp = 0x00007ffda6dd0600
+	#14: 0x00005561edcd1ca2 in main(), sp = 0x00007ffda6dd0710
+	#15: 0x00007f3e6b4921ca in __libc_init_first(), sp = 0x00007ffda6dd09f0
 End of stack trace.
 ```
 
 ## Tests
 
-The suite builds nginx with the module in a clean Docker image and crashes the processes
-with signals (SEGV/ABRT/FPE on the worker, SEGV on the master), then checks the backtrace
-file. It also covers config validation and the "module not in use" case. Stack traces are
-printed during the run.
+The suite builds nginx with the module in a clean Docker image, crashes the processes with
+signals (SEGV/ABRT/FPE on the worker, SEGV on the master) and checks the backtrace file. It
+also tests the config validation and the "module not in use" case. The stack traces are
+printed while it runs.
 
 ```
 make help          # list targets
@@ -103,23 +119,31 @@ make shell-debian  # shell inside the test image
 make clean         # remove the test images
 ```
 
-Another nginx release: `make test NGINX_VERSION=1.26.2`. Remote Docker host:
-`docker context use <name>`.
+Want another nginx version? `make test NGINX_VERSION=1.26.2`. Want to run on a remote Docker
+host? `docker context use <name>` first.
 
-To trigger a crash by hand, `tests/cgi-bin/gerar-crash.cgi` sends a signal to a worker
-(via `fcgiwrap`, inside the test image):
+To crash it by hand, `tests/cgi-bin/gerar-crash.cgi` sends a signal to a worker (it runs
+with `fcgiwrap`, inside the test image):
 
 ```
 curl 'http://127.0.0.1:8080/cgi-bin/gerar-crash.cgi?sig=SEGV'   # SEGV|ABRT|FPE|BUS|ILL
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same suite on Ubuntu and Debian for each nginx
-version above.
+The suite also crashes a worker for real, with `tests/crash-module` (a tiny nginx module just
+for tests): a NULL write and an infinite recursion (stack overflow). Try it by hand:
+
+```
+curl 'http://127.0.0.1:8080/crash?mode=null'    # or mode=stack
+```
+
+The CI (`.github/workflows/ci.yml`) runs the same suite on Ubuntu and Debian, with both nginx
+versions, on x86_64 and aarch64.
 
 ## Notes
 
-* The handler restores `SIG_DFL` after dumping, so a signal sent with `kill` doesn't
-  terminate the process the first time; a real fault does.
+* The handler runs on its own stack, so stack overflows get dumped too.
+* After the dump the handler goes back to `SIG_DFL`. So a signal sent with `kill` doesn't
+  kill the process the first time (a real fault does).
 
 ## License
 
