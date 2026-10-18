@@ -272,9 +272,9 @@ ngx_error_signal_handler (int signo, siginfo_t *info, void *ptr) {
 
     dprintf(fd, "Stack trace:\n");
 
-#if defined(UNW_TARGET_X86_64)
+#if defined(UNW_TARGET_X86_64) || defined(UNW_TARGET_AARCH64)
     /* unw_context_t is a ucontext_t here, so unwind from the faulting context */
-    memcpy(&uc, ptr, sizeof(uc));
+    memcpy(&uc, ptr, sizeof(uc) < sizeof(ucontext_t) ? sizeof(uc) : sizeof(ucontext_t));
 #else
     ret = unw_getcontext(&uc);
     if (ret != UNW_ESUCCESS) {
@@ -284,13 +284,18 @@ ngx_error_signal_handler (int signo, siginfo_t *info, void *ptr) {
     }
 #endif
 
+#if defined(UNW_TARGET_AARCH64)
+    /* the faulting pc is exact (not a return address), don't look up ip - 1 */
+    ret = unw_init_local2(&cursor, &uc, UNW_INIT_SIGNAL_FRAME);
+#else
     ret = unw_init_local (&cursor, &uc);
+#endif
     if (ret != 0) {
         dprintf(fd, "Problems with unw_init_local() failed: ret=%d\n", ret);
         goto invalid;
     }
 
-#if !defined(UNW_TARGET_X86_64)
+#if !defined(UNW_TARGET_X86_64) && !defined(UNW_TARGET_AARCH64)
     /* skip this handler's own frame */
     unw_step(&cursor);
 #endif
