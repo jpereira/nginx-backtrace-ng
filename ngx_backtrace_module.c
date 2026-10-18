@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <memory.h>
+#include <limits.h>
 
 #include <libunwind.h> /* from -llibuwind */
 
@@ -67,20 +68,21 @@ typedef struct {
 
 static sig_action_map_t ngx_backtrace_si_codes[] = {
     { SIGSEGV, SEGV_MAPERR, "SEGV_MAPERR (Address not mapped to object)" },
-    { SIGSEGV, SEGV_ACCERR, "SEGV_ACCERR (Invalid permissions for mapped object)" },
-    { SIGSEGV, -1,          "Unknown reason" }
+    { SIGSEGV, SEGV_ACCERR, "SEGV_ACCERR (Invalid permissions for mapped object)" }
 };
 
-const char *ngx_si_code2desc(int signo, int si_code) {
-    sig_action_map_t *p;
+static const char *ngx_si_code2desc(int signo, int si_code) {
+    size_t i;
 
-    for (p = &ngx_backtrace_si_codes[0]; p->signo != -1; p++) {
-        if (p->signo == signo) {
-            return (p->si_code == si_code) ? p->si_code_desc : "Unknown reason";
+    for (i = 0; i < sizeof(ngx_backtrace_si_codes) / sizeof(ngx_backtrace_si_codes[0]); i++) {
+        if (ngx_backtrace_si_codes[i].signo == signo
+            && ngx_backtrace_si_codes[i].si_code == si_code)
+        {
+            return ngx_backtrace_si_codes[i].si_code_desc;
         }
     }
 
-    return NULL;
+    return "Unknown reason";
 }
 
 static ngx_command_t ngx_backtrace_commands[] = {
@@ -134,6 +136,8 @@ ngx_log_create (ngx_cycle_t *cycle, ngx_str_t *name)
         return NULL;
     }
 
+    log->log_level = NGX_LOG_ERR;
+
     log->file = ngx_conf_open_file(cycle, name);
     if (log->file == NULL) {
         return NULL;
@@ -143,18 +147,21 @@ ngx_log_create (ngx_cycle_t *cycle, ngx_str_t *name)
 }
 #endif
 
-const char *ngx_backtrace_get_proc_exe (pid_t pid) {
+static const char *ngx_backtrace_get_proc_exe (pid_t pid) {
     char proc_pid[64];
-    static char proc_buf[64];
-    
-    snprintf(proc_pid, sizeof(proc_buf), "/proc/%d/exe", pid);
+    static char proc_buf[PATH_MAX];
+    ssize_t n;
 
-    if (readlink(proc_pid, proc_buf, sizeof(proc_buf)-1) < 1) {
-        perror("readlink");
-        return NULL;
+    snprintf(proc_pid, sizeof(proc_pid), "/proc/%d/exe", (int)pid);
+
+    n = readlink(proc_pid, proc_buf, sizeof(proc_buf) - 1);
+    if (n < 1) {
+        return "unknown";
     }
 
-    return (const char *)&proc_buf[0];
+    proc_buf[n] = '\0';
+
+    return proc_buf;
 }
 
 static ngx_int_t
@@ -205,7 +212,7 @@ ngx_error_signal_handler (int signo, siginfo_t *info, void *ptr) {
         }
     }
     
-    if (sig == 0) {
+    if (sig->signo == 0) {
         ngx_log_error(NGX_LOG_ERR, log, 0,
             "ngx_backtrace_module: Wrong signal received from Kernel! Weird!!");
         return;
@@ -215,6 +222,14 @@ ngx_error_signal_handler (int signo, siginfo_t *info, void *ptr) {
                     "ngx_backtrace_module: Got signal %d (%s), Saving the stacktrace in %s", 
                     signo, sig->signame, (char *)log->file->name.data
     );
+
+    ngx_memzero(&sa, sizeof(struct sigaction));
+    sa.sa_handler = SIG_DFL;
+    sigemptyset(&sa.sa_mask);
+    if (sigaction(signo, &sa, NULL) == -1) {
+        ngx_log_error(NGX_LOG_ERR, log, ngx_errno,
+                      "ngx_backtrace_module: sigaction(%s) failed", sig->signame);
+    }
 
     fd = log->file->fd;
     if (fcntl(fd, F_GETFL) < 0) {
@@ -243,14 +258,6 @@ ngx_error_signal_handler (int signo, siginfo_t *info, void *ptr) {
     dprintf(fd, " Signal Reason: %s\n", si_code_reason);
     dprintf(fd, "+-------------------------------------------------------+\n");
 
-    ngx_memzero(&sa, sizeof(struct sigaction));
-    sa.sa_handler = SIG_DFL;
-    sigemptyset(&sa.sa_mask);
-    if (sigaction(signo, &sa, NULL) == -1) {
-        ngx_log_error(NGX_LOG_ERR, log, ngx_errno,
-                      "ngx_backtrace_module: sigaction(%s) failed", sig->signame);
-    }
-
     if (bcf->max_stack_size == NGX_CONF_UNSET) {
         bcf->max_stack_size = NGX_BACKTRACE_DEFAULT_STACK_MAX_SIZE;
     }
@@ -270,7 +277,7 @@ ngx_error_signal_handler (int signo, siginfo_t *info, void *ptr) {
         goto invalid;
     }
 
-    for (nptrs = 0; unw_step(&cursor) > 0; nptrs++) {
+    for (nptrs = 0; nptrs < bcf->max_stack_size && unw_step(&cursor) > 0; nptrs++) {
         char fname[128] = { '\0', };
         unw_word_t ip, sp, offp;
 
