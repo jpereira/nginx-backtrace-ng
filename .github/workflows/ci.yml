@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.distro }} / nginx ${{ matrix.nginx }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [ubuntu, debian]
+        nginx: ["1.31.7", "1.26.2"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the suite
+        run: make test-${{ matrix.distro }} NGINX_VERSION=${{ matrix.nginx }}
