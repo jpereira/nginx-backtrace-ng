@@ -13,8 +13,9 @@ WORKDIR /build
 RUN curl -fsSL https://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz | tar xz --strip-components=1
 
 COPY config ngx_backtrace_module.c /module/
+COPY tests/crash-module /crash-module
 
-RUN ./configure --prefix=/opt/nginx --with-cc-opt="-g -O0" --add-module=/module \
+RUN ./configure --prefix=/opt/nginx --with-cc-opt="-g -O0" --add-module=/module --add-module=/crash-module \
     && make -j"$(nproc)" && make install
 
 COPY tests/run.sh /tests/run.sh

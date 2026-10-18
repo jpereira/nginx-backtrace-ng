@@ -19,6 +19,7 @@ master_process on;
 worker_processes 1;
 events { worker_connections 64; }
 http { server { listen 8080; location / { return 200 "ok\n"; }
+    location /crash { crash_test; }
     location /cgi-bin/ {
         include fastcgi_params;
         fastcgi_param SCRIPT_FILENAME /tests\$fastcgi_script_name;
@@ -104,6 +105,36 @@ write_conf "backtrace_log $BTLOG; backtrace_max_stack_size 2;"
 check "nginx starts and serves" start_nginx
 kill -SEGV "$(worker_pid)"; sleep 1
 check "at most 2 frames" test "$(grep -cE '#[0-9]+: 0x' $BTLOG)" -eq 2
+
+real_crash_test() { # $1=mode (null|stack)
+    local mode=$1 old
+    echo "== real fault in a worker ($mode)"
+    stop_nginx
+    write_conf "backtrace_log $BTLOG;"
+    check "nginx starts and serves" start_nginx
+    old=$(worker_pid)
+    curl -s --max-time 5 "http://127.0.0.1:8080/crash?mode=$mode" >/dev/null
+    sleep 1
+    echo "  --- $BTLOG ---"; sed 's/^/    /' $BTLOG 2>/dev/null; echo "  ---"
+    check "backtrace file created"      test -s $BTLOG
+    check "reports SIGSEGV"             grep -q "Received signal 11 (SIGSEGV)" $BTLOG
+    check "reason is SEGV_MAPERR"       grep -q "SEGV_MAPERR" $BTLOG
+    check "has 'End of stack trace'"    grep -q "End of stack trace" $BTLOG
+    [ "$mode" = null ] && check "frame #00 is the crash site" grep -qE "#00: .* in ngx_http_crash_test_handler" $BTLOG
+    check "faulting worker is gone"     is_dead $old
+    check "master respawned a worker"   bash -c "[ -n \"\$(pgrep -f 'nginx: worker')\" ]"
+    check "nginx still serves"          curl -fs http://127.0.0.1:8080/
+}
+
+echo "== config validation (extras)"
+stop_nginx
+write_conf "backtrace_log $BTLOG; backtrace_log /tmp/other.log;"
+check "rejects duplicate backtrace_log" bash -c "! $NGINX -t"
+write_conf "backtrace_log $BTLOG; backtrace_max_stack_size 0;"
+check "rejects max_stack_size 0"        bash -c "! $NGINX -t"
+
+real_crash_test null
+real_crash_test stack
 
 crash_test SEGV worker
 crash_test ABRT worker
