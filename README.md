@@ -120,8 +120,6 @@ version above.
 
 * The handler restores `SIG_DFL` after dumping, so a signal sent with `kill` doesn't
   terminate the process the first time; a real fault does.
-* The "Got signal ..." message is not written, because the backtrace log is created with
-  log level 0.
 
 ## License
 
