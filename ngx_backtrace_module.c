@@ -16,6 +16,10 @@
 #include <libunwind.h> /* from -llibuwind */
 
 #define NGX_BACKTRACE_DEFAULT_STACK_MAX_SIZE 30
+#define NGX_BACKTRACE_ALTSTACK_SIZE          (64 * 1024)
+
+/* the handler runs here, so it still works after a stack overflow */
+static char ngx_backtrace_altstack[NGX_BACKTRACE_ALTSTACK_SIZE];
 
 static char *ngx_backtrace_files(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static void ngx_error_signal_handler(int signo, siginfo_t *info, void *secret);
@@ -158,11 +162,22 @@ ngx_init_error_signals (ngx_log_t *log)
 {
     ngx_signal_t      *sig;
     struct sigaction   sa;
+    stack_t            ss;
+
+    ss.ss_sp = ngx_backtrace_altstack;
+    ss.ss_size = sizeof(ngx_backtrace_altstack);
+    ss.ss_flags = 0;
+
+    if (sigaltstack(&ss, NULL) == -1) {
+        ngx_log_error(NGX_LOG_EMERG, log, ngx_errno,
+                      "ngx_backtrace_module: sigaltstack() failed");
+        return NGX_ERROR;
+    }
 
     for (sig = ngx_backtrace_signals; sig->signo != 0; sig++) {
         ngx_memzero(&sa, sizeof(struct sigaction));
         sa.sa_sigaction = sig->handler;
-        sa.sa_flags = SA_SIGINFO;
+        sa.sa_flags = SA_SIGINFO|SA_ONSTACK;
         sigemptyset(&sa.sa_mask);
 
         if (sigaction(sig->signo, &sa, NULL) == -1) {
