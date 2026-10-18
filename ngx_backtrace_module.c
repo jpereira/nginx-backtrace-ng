@@ -15,17 +15,6 @@
 
 #include <libunwind.h> /* from -llibuwind */
 
-#if defined(REG_RIP)
-# define SIGSEGV_STACK_IA64
-# define REGFORMAT "%016lx"
-#elif defined(REG_EIP)
-# define SIGSEGV_STACK_X86
-# define REGFORMAT "%08x"
-#else
-# define SIGSEGV_STACK_GENERIC
-# define REGFORMAT "%x"
-#endif
-
 #define NGX_BACKTRACE_DEFAULT_STACK_MAX_SIZE 30
 
 static char *ngx_backtrace_files(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
@@ -264,12 +253,17 @@ ngx_error_signal_handler (int signo, siginfo_t *info, void *ptr) {
 
     dprintf(fd, "Stack trace:\n");
 
+#if defined(UNW_TARGET_X86_64)
+    /* unw_context_t is a ucontext_t here, so unwind from the faulting context */
+    memcpy(&uc, ptr, sizeof(uc));
+#else
     ret = unw_getcontext(&uc);
     if (ret != UNW_ESUCCESS) {
         ngx_log_error(NGX_LOG_ERR, log, ngx_errno,
                       "ngx_backtrace_module: Problems with unw_getcontext() ret=%d", ret);
         goto invalid;
     }
+#endif
 
     ret = unw_init_local (&cursor, &uc);
     if (ret != 0) {
@@ -277,7 +271,13 @@ ngx_error_signal_handler (int signo, siginfo_t *info, void *ptr) {
         goto invalid;
     }
 
-    for (nptrs = 0; nptrs < bcf->max_stack_size && unw_step(&cursor) > 0; nptrs++) {
+#if !defined(UNW_TARGET_X86_64)
+    /* skip this handler's own frame */
+    unw_step(&cursor);
+#endif
+
+    nptrs = 0;
+    do {
         char fname[128] = { '\0', };
         unw_word_t ip, sp, offp;
 
@@ -298,9 +298,10 @@ ngx_error_signal_handler (int signo, siginfo_t *info, void *ptr) {
         if (!strcmp(fname, "__restore_rt")) continue;
         if (!strcmp(fname, "__libc_start_main")) break;
 
-        dprintf(fd, "\t#%02d: 0x"REGFORMAT" in %s(), sp = 0x"REGFORMAT"\n",
-                nptrs, (long) ip, fname[0] ? fname : "??", (long) sp);
-    }
+        dprintf(fd, "\t#%02d: 0x%016lx in %s(), sp = 0x%016lx\n",
+                nptrs, (unsigned long) ip, fname[0] ? fname : "??", (unsigned long) sp);
+        nptrs++;
+    } while (nptrs < bcf->max_stack_size && unw_step(&cursor) > 0);
 
     dprintf(fd, "End of stack trace.\n\n");
 
