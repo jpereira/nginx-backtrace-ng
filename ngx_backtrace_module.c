@@ -78,6 +78,10 @@ static const char *ngx_si_code2desc(int signo, int si_code) {
     return "Unknown reason";
 }
 
+static ngx_conf_num_bounds_t  ngx_backtrace_stack_bounds = {
+    ngx_conf_check_num_bounds, 1, -1
+};
+
 static ngx_command_t ngx_backtrace_commands[] = {
 
     { ngx_string("backtrace_log"),
@@ -92,7 +96,7 @@ static ngx_command_t ngx_backtrace_commands[] = {
       ngx_conf_set_num_slot,
       0,
       offsetof(ngx_backtrace_conf_t, max_stack_size),
-      NULL },
+      &ngx_backtrace_stack_bounds },
 
       ngx_null_command
 };
@@ -339,6 +343,10 @@ ngx_backtrace_files(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     bcf = (ngx_backtrace_conf_t *) ngx_get_conf(cf->cycle->conf_ctx,
                                                 ngx_backtrace_module);
+
+    if (bcf->log) {
+        return "is duplicate";
+    }
 
     value = cf->args->elts;
     file = value[1];
