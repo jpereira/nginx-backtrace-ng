@@ -7,11 +7,12 @@ on:
 
 jobs:
   test:
-    name: ${{ matrix.distro }} / nginx ${{ matrix.nginx }}
-    runs-on: ubuntu-latest
+    name: ${{ matrix.distro }} / nginx ${{ matrix.nginx }} / ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
         distro: [ubuntu, debian]
         nginx: ["1.31.7", "1.26.2"]
     steps:
