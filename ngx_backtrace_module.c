@@ -1,4 +1,15 @@
 /*
+ * ngx_backtrace_module - dump a stack trace when nginx gets a fatal signal.
+ *
+ * On SIGSEGV, SIGABRT/SIGIOT, SIGFPE, SIGILL or SIGBUS the handler runs on an
+ * alternate stack, so it also works after a stack overflow. It writes the signal
+ * details and the call stack (via libunwind) to the file set by "backtrace_log",
+ * then restores SIG_DFL and lets the process die as usual.
+ *
+ * Directives: backtrace_log <file>; backtrace_max_stack_size <n>;
+ *
+ * Version: 1.0.1
+ *
  * Copyright (C) 2016 Jorge Pereira <jpereiran@gmail.com>
  */
 
@@ -15,6 +26,7 @@
 
 #include <libunwind.h> /* from -llibuwind */
 
+#define NGX_BACKTRACE_VERSION                "1.0.1"
 #define NGX_BACKTRACE_DEFAULT_STACK_MAX_SIZE 30
 #define NGX_BACKTRACE_ALTSTACK_SIZE          (64 * 1024)
 
